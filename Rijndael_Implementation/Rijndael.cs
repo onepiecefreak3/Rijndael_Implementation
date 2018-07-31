@@ -123,10 +123,10 @@ namespace Rijndael_Implementation
                 byte[] result = new byte[16];
                 for (int i = 0; i < 4; i++)
                 {
-                    result[i * 4] = (byte)(Support.GMul(input[i * 4 + 0], (byte)(Support.GMul(input[i * 4 + 0], input[i * 4 + 0]) ^ Support.GMul(input[i * 4 + 2], input[i * 4 + 2]))) ^ Support.GMul(input[i * 4 + 2], (byte)(Support.GMul(input[i * 4 + 1], input[i * 4 + 1]) ^ Support.GMul(input[i * 4 + 3], input[i * 4 + 3]))));
-                    result[i * 4 + 1] = (byte)(Support.GMul(input[i * 4 + 3], (byte)(Support.GMul(input[i * 4 + 0], input[i * 4 + 0]) ^ Support.GMul(input[i * 4 + 2], input[i * 4 + 2]))) ^ Support.GMul(input[i * 4 + 1], (byte)(Support.GMul(input[i * 4 + 1], input[i * 4 + 1]) ^ Support.GMul(input[i * 4 + 3], input[i * 4 + 3]))));
-                    result[i * 4 + 2] = (byte)(Support.GMul(input[i * 4 + 2], (byte)(Support.GMul(input[i * 4 + 0], input[i * 4 + 0]) ^ Support.GMul(input[i * 4 + 2], input[i * 4 + 2]))) ^ Support.GMul(input[i * 4 + 0], (byte)(Support.GMul(input[i * 4 + 1], input[i * 4 + 1]) ^ Support.GMul(input[i * 4 + 3], input[i * 4 + 3]))));
-                    result[i * 4 + 3] = (byte)(Support.GMul(input[i * 4 + 1], (byte)(Support.GMul(input[i * 4 + 0], input[i * 4 + 0]) ^ Support.GMul(input[i * 4 + 2], input[i * 4 + 2]))) ^ Support.GMul(input[i * 4 + 3], (byte)(Support.GMul(input[i * 4 + 1], input[i * 4 + 1]) ^ Support.GMul(input[i * 4 + 3], input[i * 4 + 3]))));
+                    result[0 * 4 + i] = (byte)(Support.GMul(input[i * 4 + 0], (byte)(Support.GMul(input[i * 4 + 0], input[i * 4 + 0]) ^ Support.GMul(input[i * 4 + 2], input[i * 4 + 2]))) ^ Support.GMul(input[i * 4 + 2], (byte)(Support.GMul(input[i * 4 + 1], input[i * 4 + 1]) ^ Support.GMul(input[i * 4 + 3], input[i * 4 + 3]))));
+                    result[1 * 4 + i] = (byte)(Support.GMul(input[i * 4 + 3], (byte)(Support.GMul(input[i * 4 + 0], input[i * 4 + 0]) ^ Support.GMul(input[i * 4 + 2], input[i * 4 + 2]))) ^ Support.GMul(input[i * 4 + 1], (byte)(Support.GMul(input[i * 4 + 1], input[i * 4 + 1]) ^ Support.GMul(input[i * 4 + 3], input[i * 4 + 3]))));
+                    result[2 * 4 + i] = (byte)(Support.GMul(input[i * 4 + 2], (byte)(Support.GMul(input[i * 4 + 0], input[i * 4 + 0]) ^ Support.GMul(input[i * 4 + 2], input[i * 4 + 2]))) ^ Support.GMul(input[i * 4 + 0], (byte)(Support.GMul(input[i * 4 + 1], input[i * 4 + 1]) ^ Support.GMul(input[i * 4 + 3], input[i * 4 + 3]))));
+                    result[3 * 4 + i] = (byte)(Support.GMul(input[i * 4 + 1], (byte)(Support.GMul(input[i * 4 + 0], input[i * 4 + 0]) ^ Support.GMul(input[i * 4 + 2], input[i * 4 + 2]))) ^ Support.GMul(input[i * 4 + 3], (byte)(Support.GMul(input[i * 4 + 1], input[i * 4 + 1]) ^ Support.GMul(input[i * 4 + 3], input[i * 4 + 3]))));
                 }
                 return result;
             }
@@ -223,6 +223,14 @@ namespace Rijndael_Implementation
             return output;
         }
 
+        private byte[] ApplyInverseSBox(byte[] input)
+        {
+            var output = new byte[input.Length];
+            for (int i = 0; i < input.Length; i++)
+                output[i] = _tables.InverseSBox[input[i]];
+            return output;
+        }
+
         //Done, according to wikipedia and specification
         private byte[] Rcon(byte[] input, int rconIndex)
         {
@@ -241,12 +249,27 @@ namespace Rijndael_Implementation
 
             //Rounds
             for (int i = 1; i < _rounds; i++)
-            {
                 block = ApplyRound(block, _keyExp.GetElements(i * (_blockLength / 4), _blockLength / 4).ToByteArray());
-            }
 
             //Final round
             block = ApplyFinalRound(block, _keyExp.GetElements((_keyExpLength / 4) - (_blockLength / 4), (_blockLength / 4)).ToByteArray());
+
+            return block;
+        }
+
+        public byte[] DecryptBlock(byte[] block)
+        {
+            //Reverse of encryption
+
+            //Reverse final round
+            block = InverseApplyFinalRound(block, _keyExp.GetElements((_keyExpLength / 4) - (_blockLength / 4), (_blockLength / 4)).ToByteArray());
+
+            //Reverse normal rounds
+            for (int i = _rounds - 1; i >= 1; i--)
+                block = InverseApplyRound(block, _keyExp.GetElements(i * (_blockLength / 4), _blockLength / 4).ToByteArray());
+
+            //Reverse initial round
+            block = AddRoundKey(block, _keyExp.GetElements(0, _blockLength / 4).ToByteArray());
 
             return block;
         }
@@ -294,6 +317,45 @@ namespace Rijndael_Implementation
 
             return block;
         }
+        #endregion
+
+        #region Reverse Round functions
+        private byte[] InverseMixColumns(byte[] block)
+        {
+            for (int i = 0; i < _blockLength; i += 4)
+            {
+                var tempColumn = block.GetElements(i, 4);
+
+                tempColumn[0] = (byte)(Support.GMul(_tables.InverseMixColumnMatrix[0], block[i]) ^ Support.GMul(_tables.InverseMixColumnMatrix[1], block[i + 1]) ^ Support.GMul(_tables.InverseMixColumnMatrix[2], block[i + 2]) ^ Support.GMul(_tables.InverseMixColumnMatrix[3], block[i + 3]));
+                tempColumn[1] = (byte)(Support.GMul(_tables.InverseMixColumnMatrix[4], block[i]) ^ Support.GMul(_tables.InverseMixColumnMatrix[5], block[i + 1]) ^ Support.GMul(_tables.InverseMixColumnMatrix[6], block[i + 2]) ^ Support.GMul(_tables.InverseMixColumnMatrix[7], block[i + 3]));
+                tempColumn[2] = (byte)(Support.GMul(_tables.InverseMixColumnMatrix[8], block[i]) ^ Support.GMul(_tables.InverseMixColumnMatrix[9], block[i + 1]) ^ Support.GMul(_tables.InverseMixColumnMatrix[10], block[i + 2]) ^ Support.GMul(_tables.InverseMixColumnMatrix[11], block[i + 3]));
+                tempColumn[3] = (byte)(Support.GMul(_tables.InverseMixColumnMatrix[12], block[i]) ^ Support.GMul(_tables.InverseMixColumnMatrix[13], block[i + 1]) ^ Support.GMul(_tables.InverseMixColumnMatrix[14], block[i + 2]) ^ Support.GMul(_tables.InverseMixColumnMatrix[15], block[i + 3]));
+
+                for (var j = 0; j < 4; j++)
+                    block[i + j] = tempColumn[j];
+            }
+
+            return block;
+        }
+
+        private byte[] InverseShiftRows(byte[] block)
+        {
+            for (int i = 1; i < 4; i++)
+            {
+                byte[] toShift = new byte[_blockLength / 4];
+                for (int j = 0; j < _blockLength / 4; j++)
+                    toShift[j] = block[j * 4 + i];
+                var rotated = Rotate(toShift, _tables.InverseShiftRowMatrix[_blockLength / 4][i]);
+                for (int j = 0; j < _blockLength / 4; j++)
+                    block[j * 4 + i] = rotated[j];
+            }
+
+            return block;
+        }
+
+        private byte[] InverseApplyRound(byte[] block, byte[] key) => ApplyInverseSBox(InverseShiftRows(InverseMixColumns(AddRoundKey(block, key))));
+
+        private byte[] InverseApplyFinalRound(byte[] block, byte[] key) => ApplyInverseSBox(InverseShiftRows(AddRoundKey(block, key)));
         #endregion
     }
 

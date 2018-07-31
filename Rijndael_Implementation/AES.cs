@@ -10,7 +10,8 @@ namespace Rijndael_Implementation
     {
         public enum AESMode
         {
-            ECB
+            ECB,
+            CBC
         }
 
         public enum Padding
@@ -21,6 +22,7 @@ namespace Rijndael_Implementation
         }
 
         private byte[] _key = null;
+        private byte[] iv = null;
         private int _blockLength = 128;
         private int _blockLengthInBytes { get { return _blockLength / 8; } }
 
@@ -41,9 +43,10 @@ namespace Rijndael_Implementation
         /// </summary>
         /// <param name="key">the key to use for en-/decryption</param>
         /// <param name="blockLength">Blocklength in bits</param>
-        public AES(byte[] key, int blockLength)
+        public AES(byte[] key, byte[] iv, int blockLength)
         {
             this.key = key;
+            this.iv = iv;
             this.blockLength = blockLength;
 
             _baseRijndael = new Rijndael(_key, _blockLengthInBytes);
@@ -53,24 +56,68 @@ namespace Rijndael_Implementation
         {
             if (_key == null)
                 throw new Exception("No key set.");
+            if (aesMode == AESMode.CBC && iv == null)
+                throw new Exception("No IV set.");
 
-            switch (aesMode)
+            var blockCount = 0;
+            var localIV = iv;
+            while (blockCount * _blockLengthInBytes < length)
             {
-                case AESMode.ECB:
-                    var blockCount = 0;
-                    while (blockCount * _blockLengthInBytes < length)
-                    {
-                        byte[] part;
-                        if ((blockCount + 1) * _blockLengthInBytes > length)
-                            part = ApplyPadding(input.GetElements(offset + blockCount * _blockLengthInBytes, blockCount * _blockLengthInBytes - length));
-                        else
-                            part = input.GetElements(offset + blockCount * _blockLengthInBytes, _blockLengthInBytes);
+                byte[] part;
+                if ((blockCount + 1) * _blockLengthInBytes > length)
+                    part = ApplyPadding(input.GetElements(offset + blockCount * _blockLengthInBytes, blockCount * _blockLengthInBytes - length));
+                else
+                    part = input.GetElements(offset + blockCount * _blockLengthInBytes, _blockLengthInBytes);
 
+                switch (aesMode)
+                {
+                    case AESMode.ECB:
                         _baseRijndael.EncryptBlock(part).CopyTo(output, outOffset + blockCount * _blockLengthInBytes);
+                        break;
+                    case AESMode.CBC:
+                        for (int i = 0; i < part.Length; i++)
+                            part[i] ^= localIV[i];
+                        _baseRijndael.EncryptBlock(part).CopyTo(output, outOffset + blockCount * _blockLengthInBytes);
+                        localIV = output.GetElements(outOffset + blockCount * _blockLengthInBytes, part.Length);
+                        break;
+                }
 
-                        blockCount++;
-                    }
-                    break;
+                blockCount++;
+            }
+        }
+
+        public void Decrypt(byte[] input, int offset, int length, byte[] output, int outOffset)
+        {
+            if (_key == null)
+                throw new Exception("No key set.");
+            if (aesMode == AESMode.CBC && iv == null)
+                throw new Exception("No IV set.");
+
+            var blockCount = 0;
+            var localIV = iv;
+            while (blockCount * _blockLengthInBytes < length)
+            {
+                byte[] part;
+                if ((blockCount + 1) * _blockLengthInBytes > length)
+                    part = input.GetElements(offset + blockCount * _blockLengthInBytes, blockCount * _blockLengthInBytes - length);
+                else
+                    part = input.GetElements(offset + blockCount * _blockLengthInBytes, _blockLengthInBytes);
+
+                switch (aesMode)
+                {
+                    case AESMode.ECB:
+                        _baseRijndael.DecryptBlock(part).CopyTo(output, outOffset + blockCount * _blockLengthInBytes);
+                        break;
+                    case AESMode.CBC:
+                        _baseRijndael.DecryptBlock(part).CopyTo(output, outOffset + blockCount * _blockLengthInBytes);
+                        var index = 0;
+                        for (int i = outOffset + blockCount * _blockLengthInBytes; i < outOffset + blockCount * _blockLengthInBytes + part.Length; i++)
+                            output[i] ^= localIV[index++];
+                        localIV = part;
+                        break;
+                }
+
+                blockCount++;
             }
         }
 
