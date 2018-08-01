@@ -244,6 +244,9 @@ namespace Rijndael_Implementation
 
         public byte[] EncryptBlock(byte[] block)
         {
+            if (block.Length != _blockLength)
+                throw new Exception("Block needs to be a multiple of blockLength.");
+
             //Initial round
             block = AddRoundKey(block, _keyExp.GetElements(0, _blockLength / 4).ToByteArray());
 
@@ -259,6 +262,9 @@ namespace Rijndael_Implementation
 
         public byte[] DecryptBlock(byte[] block)
         {
+            if (block.Length != _blockLength)
+                throw new Exception("Block needs to be a multiple of blockLength.");
+
             //Reverse of encryption
 
             //Reverse final round

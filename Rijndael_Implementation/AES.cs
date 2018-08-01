@@ -22,15 +22,16 @@ namespace Rijndael_Implementation
         }
 
         private byte[] _key = null;
-        private byte[] iv = null;
-        private int _blockLength = 128;
-        private int _blockLengthInBytes { get { return _blockLength / 8; } }
+        private byte[] _iv = null;
+        private int _blockLengthInBit = 128;
+        private int _blockLengthInBytes { get { return _blockLengthInBit / 8; } }
 
         public AESMode aesMode = AESMode.ECB;
         public Padding _padding = Padding.PKCS7;
 
         public byte[] key { get { return _key; } set { if (value.Length % 8 != 0 || value.Length < 16 || value.Length > 32) throw new Exception("Key has to be 16, 24, or 32 byte."); else _key = value; } }
-        public int blockLength { get { return _blockLength; } set { if (value % 64 != 0 || value < 128 || value > 256) throw new Exception("Blocksize has to be 128, 192, or 256 bits."); else _blockLength = value; } }
+        public byte[] iv { get { return _iv; } set { if (value.Length % 8 != 0 || value.Length < 16 || value.Length > 32) throw new Exception("IV has to be 16, 24, or 32 byte."); else _iv = value; } }
+        public int blockLengthInBit { get { return _blockLengthInBit; } set { if (value % 64 != 0 || value < 128 || value > 256) throw new Exception("Blocksize has to be 128, 192, or 256 bits."); else _blockLengthInBit = value; } }
 
         public Rijndael _baseRijndael { get; private set; }
 
@@ -42,18 +43,30 @@ namespace Rijndael_Implementation
         /// Initializes an instance of AES
         /// </summary>
         /// <param name="key">the key to use for en-/decryption</param>
-        /// <param name="blockLength">Blocklength in bits</param>
-        public AES(byte[] key, byte[] iv, int blockLength)
+        /// <param name="blockLengthInBit">Blocklength in bits</param>
+        public AES(byte[] key, byte[] iv, int blockLengthInBit = -1)
         {
+            if (key.Length != iv.Length)
+                throw new Exception("Key and IV need to be the same size.");
+            if (blockLengthInBit >= 0 && blockLengthInBit != key.Length * 8)
+                throw new Exception("BlockLength needs to be the right amount of bits.");
+
             this.key = key;
             this.iv = iv;
-            this.blockLength = blockLength;
+            this.blockLengthInBit = (blockLengthInBit < 0) ? key.Length * 8 : blockLengthInBit;
 
             _baseRijndael = new Rijndael(_key, _blockLengthInBytes);
         }
 
         public void Encrypt(byte[] input, int offset, int length, byte[] output, int outOffset)
         {
+            if (offset < 0 || outOffset < 0)
+                throw new Exception("No negative offsets allowed.");
+            if (offset >= input.Length || outOffset >= output.Length)
+                throw new Exception("Offset can't be larger than the array.");
+            if (offset + length > input.Length)
+                throw new Exception("Length+Offset reaches out of range.");
+
             if (_key == null)
                 throw new Exception("No key set.");
             if (aesMode == AESMode.CBC && iv == null)
@@ -65,7 +78,7 @@ namespace Rijndael_Implementation
             {
                 byte[] part;
                 if ((blockCount + 1) * _blockLengthInBytes > length)
-                    part = ApplyPadding(input.GetElements(offset + blockCount * _blockLengthInBytes, blockCount * _blockLengthInBytes - length));
+                    part = ApplyPadding(input.GetElements(offset + blockCount * _blockLengthInBytes, length % _blockLengthInBytes));
                 else
                     part = input.GetElements(offset + blockCount * _blockLengthInBytes, _blockLengthInBytes);
 
@@ -88,6 +101,17 @@ namespace Rijndael_Implementation
 
         public void Decrypt(byte[] input, int offset, int length, byte[] output, int outOffset)
         {
+            if (offset < 0 || outOffset < 0)
+                throw new Exception("No negative offsets allowed.");
+            if (offset >= input.Length || outOffset >= output.Length)
+                throw new Exception("Offset can't be larger than the array.");
+            if (offset + length > input.Length)
+                throw new Exception("Length+Offset reaches out of range.");
+            if (input.Length % _blockLengthInBytes > 0)
+                throw new Exception("input array length needs to be a multiple of keysize.");
+            if (length % _blockLengthInBytes > 0)
+                throw new Exception("length needs to be a multiple of keysize.");
+
             if (_key == null)
                 throw new Exception("No key set.");
             if (aesMode == AESMode.CBC && iv == null)
@@ -99,9 +123,13 @@ namespace Rijndael_Implementation
             {
                 byte[] part;
                 if ((blockCount + 1) * _blockLengthInBytes > length)
-                    part = input.GetElements(offset + blockCount * _blockLengthInBytes, blockCount * _blockLengthInBytes - length);
+                {
+                    part = input.GetElements(offset + blockCount * _blockLengthInBytes, length % _blockLengthInBytes);
+                }
                 else
+                {
                     part = input.GetElements(offset + blockCount * _blockLengthInBytes, _blockLengthInBytes);
+                }
 
                 switch (aesMode)
                 {
